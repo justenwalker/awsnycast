@@ -3,16 +3,18 @@ package daemon
 import (
 	"errors"
 	"fmt"
-	a "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/bobtfish/AWSnycast/aws"
-	"github.com/bobtfish/AWSnycast/config"
-	"github.com/bobtfish/AWSnycast/healthcheck"
-	"github.com/bobtfish/AWSnycast/instancemetadata"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
 	"time"
+
+	a "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/justenwalker/awsnycast/aws"
+	"github.com/justenwalker/awsnycast/config"
+	"github.com/justenwalker/awsnycast/healthcheck"
+	"github.com/justenwalker/awsnycast/instancemetadata"
 )
 
 type FakeMetadataFetcher struct {

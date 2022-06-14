@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/bobtfish/AWSnycast/aws"
 	"github.com/hashicorp/go-multierror"
 	"gopkg.in/yaml.v2"
+
+	"github.com/justenwalker/awsnycast/aws"
 )
 
 type RouteTableFindSpec struct {

@@ -3,11 +3,12 @@ package healthcheck
 import (
 	"errors"
 	"fmt"
-	log "github.com/bobtfish/logrus"
-	"github.com/hashicorp/go-multierror"
 	"net"
 	"os/exec"
 	"time"
+
+	"github.com/hashicorp/go-multierror"
+	log "github.com/sirupsen/logrus"
 )
 
 var healthCheckTypes map[string]func(Healthcheck) (HealthChecker, error)

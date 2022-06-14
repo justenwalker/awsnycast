@@ -4,13 +4,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"github.com/bobtfish/AWSnycast/testhelpers"
-	log "github.com/bobtfish/logrus"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"net"
 	"os"
 	"testing"
+
+	"github.com/justenwalker/awsnycast/testhelpers"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestHealthcheckTcpNoPort(t *testing.T) {

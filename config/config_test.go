@@ -7,11 +7,13 @@ import (
 
 	a "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/bobtfish/AWSnycast/aws"
-	"github.com/bobtfish/AWSnycast/healthcheck"
-	"github.com/bobtfish/AWSnycast/instancemetadata"
-	"github.com/bobtfish/AWSnycast/testhelpers"
 	"github.com/hashicorp/go-multierror"
+
+	"github.com/justenwalker/awsnycast/aws"
+	"github.com/justenwalker/awsnycast/healthcheck"
+	"github.com/justenwalker/awsnycast/instancemetadata"
+	"github.com/justenwalker/awsnycast/testhelpers"
+
 	"github.com/stretchr/testify/assert"
 )
 

@@ -8,8 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/bobtfish/AWSnycast/version"
-	log "github.com/bobtfish/logrus"
+	"github.com/justenwalker/awsnycast/version"
+	log "github.com/sirupsen/logrus"
 )
 
 var errNICNotFound = errors.New("nic with source dest check disabled was not found")

@@ -3,12 +3,14 @@ package config
 import (
 	"errors"
 	"fmt"
-	"github.com/bobtfish/AWSnycast/aws"
-	"github.com/bobtfish/AWSnycast/healthcheck"
-	"github.com/bobtfish/AWSnycast/instancemetadata"
+	"io/ioutil"
+
 	"github.com/hashicorp/go-multierror"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
+
+	"github.com/justenwalker/awsnycast/aws"
+	"github.com/justenwalker/awsnycast/healthcheck"
+	"github.com/justenwalker/awsnycast/instancemetadata"
 )
 
 type Config struct {

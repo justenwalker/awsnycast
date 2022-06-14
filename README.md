@@ -1,7 +1,5 @@
 # AWSnycast
 
-[![Build Status](https://travis-ci.org/bobtfish/AWSnycast.svg)](https://travis-ci.org/bobtfish/AWSnycast) [![Coverage Status](https://coveralls.io/repos/bobtfish/AWSnycast/badge.svg?branch=master&service=github)](https://coveralls.io/github/bobtfish/AWSnycast?branch=master)
-
 AWSnycast is a routing daemon for AWS route tables, to simulate an Anycast like service, and act as an
 extension of in-datacenter Anycast. It can also be used to provide HA NAT service.
 
@@ -109,7 +107,7 @@ FIXME!! More details about how to test / curl things here..
 You can install binary release versions onto x86 Linux
 directly from github, e.g.
 
-    sudo wget https://github.com/bobtfish/AWSnycast/releases/download/v0.1.0/AWSnycast -O /usr/local/bin/AWSnycast
+    sudo wget https://github.com/justenwalker/awsnycast/releases/download/v0.1.0/AWSnycast -O /usr/local/bin/AWSnycast
     sudo chmod 700 /usr/local/bin/AWSnycast
 
 or you can install the .deb or .rpm packages found at the same location
@@ -127,7 +125,7 @@ Once you have go installed, and the GOPATH environment variable setup
     make
 
 This will build the binary at the top level of the checkout
-(i.e. in /Users/tdoran/go/src/github.com/bobtfish/AWSnycast/AWSnycast in my example)
+(i.e. in /Users/tdoran/go/src/github.com/justenwalker/awsnycast/AWSnycast in my example)
 
 # Running it
 

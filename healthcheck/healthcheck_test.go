@@ -3,12 +3,14 @@ package healthcheck
 import (
 	"errors"
 	"fmt"
-	"github.com/bobtfish/AWSnycast/testhelpers"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/justenwalker/awsnycast/testhelpers"
 )
 
 type MyFakeHealthCheck struct {

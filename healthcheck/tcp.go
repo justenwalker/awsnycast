@@ -1,18 +1,19 @@
 package healthcheck
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
-	utils "github.com/bobtfish/AWSnycast/utils"
-	log "github.com/bobtfish/logrus"
-	"github.com/hashicorp/go-multierror"
+	"io/ioutil"
 	"net"
 	"strings"
 	"time"
 
-	"crypto/tls"
-	"crypto/x509"
-	"io/ioutil"
+	"github.com/hashicorp/go-multierror"
+	log "github.com/sirupsen/logrus"
+
+	"github.com/justenwalker/awsnycast/utils"
 )
 
 func init() {

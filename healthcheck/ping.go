@@ -1,8 +1,9 @@
 package healthcheck
 
 import (
-	log "github.com/bobtfish/logrus"
 	"os/exec"
+
+	log "github.com/sirupsen/logrus"
 )
 
 var pingCmd string

@@ -9,9 +9,9 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/bobtfish/AWSnycast/healthcheck"
-	"github.com/bobtfish/AWSnycast/instancemetadata"
-	"github.com/bobtfish/AWSnycast/testhelpers"
+	"github.com/justenwalker/awsnycast/healthcheck"
+	"github.com/justenwalker/awsnycast/instancemetadata"
+	"github.com/justenwalker/awsnycast/testhelpers"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -37,30 +37,30 @@ var (
 	rtb2 = ec2.RouteTable{
 		Associations: []*ec2.RouteTableAssociation{
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(true),
+				Main:                    aws.Bool(true),
 				RouteTableAssociationId: aws.String("rtbassoc-b1f025d4"),
 				RouteTableId:            aws.String("rtb-9696cffe"),
 			},
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(false),
+				Main:                    aws.Bool(false),
 				RouteTableAssociationId: aws.String("rtbassoc-85c1cbe7"),
 				RouteTableId:            aws.String("rtb-9696cffe"),
 				SubnetId:                aws.String("subnet-16b0e97e"),
 			},
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(false),
+				Main:                    aws.Bool(false),
 				RouteTableAssociationId: aws.String("rtbassoc-ba8573df"),
 				RouteTableId:            aws.String("rtb-9696cffe"),
 				SubnetId:                aws.String("subnet-3fb0e957"),
 			},
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(false),
+				Main:                    aws.Bool(false),
 				RouteTableAssociationId: aws.String("rtbassoc-84c1cbe6"),
 				RouteTableId:            aws.String("rtb-9696cffe"),
 				SubnetId:                aws.String("subnet-28b0e940"),
 			},
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(false),
+				Main:                    aws.Bool(false),
 				RouteTableAssociationId: aws.String("rtbassoc-858573e0"),
 				RouteTableId:            aws.String("rtb-9696cffe"),
 				SubnetId:                aws.String("subnet-f3b0e99b"),
@@ -119,13 +119,13 @@ var (
 	rtb3 = ec2.RouteTable{
 		Associations: []*ec2.RouteTableAssociation{
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(false),
+				Main:                    aws.Bool(false),
 				RouteTableAssociationId: aws.String("rtbassoc-818573e4"),
 				RouteTableId:            aws.String("rtb-019cab69"),
 				SubnetId:                aws.String("subnet-37b0e95f"),
 			},
 			&ec2.RouteTableAssociation{
-				Main: aws.Bool(false),
+				Main:                    aws.Bool(false),
 				RouteTableAssociationId: aws.String("rtbassoc-fd9cab95"),
 				RouteTableId:            aws.String("rtb-019cab69"),
 				SubnetId:                aws.String("subnet-44b0e92c"),
@@ -988,7 +988,7 @@ func TestStartHealthcheckListenerNoHealthcheck(t *testing.T) {
 
 func TestUpdateRemoteHealthchecksEmpty(t *testing.T) {
 	rs := &ManageRoutesSpec{
-		Cidr: "127.0.0.1",
+		Cidr:                  "127.0.0.1",
 		RemoteHealthcheckName: "test",
 	}
 	err := rs.Validate(im1, &FakeRouteTableManager{}, "foo", emptyHealthchecks, emptyHealthchecks)
@@ -1001,7 +1001,7 @@ func TestUpdateRemoteHealthchecksNoHealthcheck(t *testing.T) {
 	hc := make(map[string]*healthcheck.Healthcheck)
 	hc["192.168.1.1"] = &healthcheck.Healthcheck{}
 	rs := &ManageRoutesSpec{
-		Cidr: "127.0.0.1",
+		Cidr:                  "127.0.0.1",
 		RemoteHealthcheckName: "test",
 		ec2RouteTables:        rt,
 	}
@@ -1019,7 +1019,7 @@ func TestUpdateRemoteHealthchecks(t *testing.T) {
 	hc := make(map[string]*healthcheck.Healthcheck)
 	hc["test"] = &healthcheck.Healthcheck{}
 	rs := &ManageRoutesSpec{
-		Cidr: "127.0.0.1",
+		Cidr:                  "127.0.0.1",
 		RemoteHealthcheckName: "test",
 	}
 	err := rs.Validate(im1, &FakeRouteTableManager{}, "foo", emptyHealthchecks, hc)
