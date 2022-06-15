@@ -1,47 +1,39 @@
-resource "aws_iam_instance_profile" "test_profile" {
-    name = "test_profile"
-    role = "${aws_iam_role.role.name}"
+data "aws_iam_policy_document" "assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+    principals {
+      identifiers = ["ec2.amazonaws.com"]
+      type        = "Service"
+    }
+  }
 }
-
+data "aws_iam_policy_document" "modify_routes_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "ec2:ReplaceRoute",
+      "ec2:CreateRoute",
+      "ec2:DeleteRoute",
+      "ec2:DescribeRouteTables",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DescribeInstanceAttribute",
+      "ec2:DescribeInstanceStatus",
+    ]
+    resources = ["*"]
+  }
+}
 resource "aws_iam_role" "role" {
-    name = "test_role"
-    path = "/"
-    assume_role_policy = <<EOF
-{
-    "Version": "2008-10-17",
-    "Statement": [
-        {
-            "Action": "sts:AssumeRole",
-            "Principal": {"AWS": "*"},
-            "Effect": "Allow",
-            "Sid": ""
-        }
-    ]
+  name               = "awsnycast_test_role"
+  path               = "/"
+  assume_role_policy = data.aws_iam_policy_document.assume_role.json
 }
-EOF
-}
-
 resource "aws_iam_role_policy" "modify_routes" {
-    name = "modify_routes"
-    role = "${aws_iam_role.role.id}"
-    policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-        {
-            "Action": [
-                "ec2:ReplaceRoute",
-                "ec2:CreateRoute",
-                "ec2:DeleteRoute",
-                "ec2:DescribeRouteTables",
-                "ec2:DescribeNetworkInterfaces",
-                "ec2:DescribeInstanceAttribute"
-            ],
-            "Effect": "Allow",
-            "Resource": "*"
-        }
-    ]
+  name   = "awsnycast_modify_routes"
+  role   = aws_iam_role.role.id
+  policy = data.aws_iam_policy_document.modify_routes_policy.json
 }
-EOF
+resource "aws_iam_instance_profile" "test_profile" {
+  name = "awsnycast_test_profile"
+  role = aws_iam_role.role.name
 }
-

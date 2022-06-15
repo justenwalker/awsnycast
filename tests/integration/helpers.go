@@ -2,33 +2,34 @@ package integration
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"os/exec"
+	"time"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 	"golang.org/x/crypto/ssh"
-	"io"
-	"io/ioutil"
-	"os/exec"
-	"strings"
-	"time"
 )
 
 func Foo() int {
 	return 0
 }
 
-func RunMake() {
-	cmd := exec.Command("make")
+func RunMage() {
+	cmd := exec.Command("mage")
 	err := cmd.Run()
 	out, _ := cmd.CombinedOutput()
 	if err != nil {
-		Fail(fmt.Sprintf("Unable to run 'make', output: %s", string(out)))
+		Fail(fmt.Sprintf("Unable to run 'mage', output: %s", string(out)))
 	}
 }
 
 func RunTerraform() {
-	command := exec.Command("terraform", "apply")
+	command := exec.Command("terraform", "apply", "-auto-approve")
 	session, err := gexec.Start(command, GinkgoWriter, GinkgoWriter)
 	Ω(err).ShouldNot(HaveOccurred())
 	session.Wait(1800 * time.Second)
@@ -49,15 +50,21 @@ func SshKeyFile(file string) ssh.AuthMethod {
 }
 
 func NatIPs() []string {
-	output, err := exec.Command("terraform", "output", "nat_public_ips").Output()
+	output, err := exec.Command("terraform", "output", "-json", "nat_public_ips").Output()
 	Ω(err).ShouldNot(HaveOccurred())
-	return strings.Split(strings.TrimSuffix(string(output), "\n"), ",")
+	var ips []string
+	err = json.Unmarshal(output, &ips)
+	Ω(err).ShouldNot(HaveOccurred())
+	return ips
 }
 
 func InternalIPs() []string {
-	output, err := exec.Command("terraform", "output", "internal_private_ips").Output()
+	output, err := exec.Command("terraform", "output", "-json", "internal_private_ips").Output()
 	Ω(err).ShouldNot(HaveOccurred())
-	return strings.Split(strings.TrimSuffix(string(output), "\n"), ",")
+	var ips []string
+	err = json.Unmarshal(output, &ips)
+	Ω(err).ShouldNot(HaveOccurred())
+	return ips
 }
 
 func NatA() string {
@@ -99,6 +106,7 @@ func Ssh(cmd string, host string) (outStr string) {
 		Auth: []ssh.AuthMethod{
 			SshKeyFile("id_rsa"),
 		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 	connection, err := ssh.Dial("tcp", host+":22", sshConfig)
 	Ω(err).ShouldNot(HaveOccurred())

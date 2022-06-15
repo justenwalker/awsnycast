@@ -1,10 +1,8 @@
-package integration_test
+package integration
 
 import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
-	. "github.com/justenwalker/awsnycast/tests/integration"
 )
 
 const (

@@ -1,0 +1,71 @@
+---
+poll_time: 30 # Note this is insanely small for a prod deployment, I think?
+healthchecks:
+  public:
+    type: ping
+    destination: 8.8.8.8
+    rise: 2
+    fall: 10
+    every: 1
+  anycast:
+    type: tcp
+    destination: 192.168.1.1
+    rise: 2
+    fall: 2
+    every: 1
+    config:
+      port: 80
+remote_healthchecks:
+  service:
+    type: tcp
+    rise: 10 # Note we set these a lot higher than local healthchecks
+    fall: 10
+    every: 10
+    config:
+      port: 80
+routetables:
+  my_az:
+    find:
+      type: and
+      config:
+        filters:
+          - type: by_tag
+            config:
+              key: az
+              value: "{{ availability_zone }}"
+          - type: by_tag
+            config:
+              key: type
+              value: private
+    manage_routes:
+       - cidr: 0.0.0.0/0
+         instance: SELF
+         healthcheck: public
+       - cidr: 192.168.1.1/32
+         instance: SELF
+         healthcheck: anycast
+         remote_healthcheck: service
+  other_azs:
+    find:
+      type: and
+      config:
+        filters:
+          - type: by_tag
+            not: true
+            config:
+              key: az
+              value: "{{ availability_zone }}"
+          - type: by_tag
+            config:
+              key: type
+              value: private
+    manage_routes:
+      - cidr: 0.0.0.0/0
+        instance: SELF
+        healthcheck: public
+        if_unhealthy: true
+      - cidr: 192.168.1.1/32
+        instance: SELF
+        if_unhealthy: true
+        healthcheck: anycast
+        remote_healthcheck: service

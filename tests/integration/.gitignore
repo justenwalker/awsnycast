@@ -1,0 +1,8 @@
+.terraform.lock.hcl
+awsnycast
+terraform.tfstate
+terraform.tfstate.backup
+.terraform/
+terraform.tfvars
+terraform.tfvars.json
+playbook.zip

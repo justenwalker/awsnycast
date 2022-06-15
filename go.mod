@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/aws/aws-sdk-go v1.5.9-0.20161118231823-a0a042689f81
 	github.com/hashicorp/go-multierror v0.0.0-20150916205742-d30f09973e19
+	github.com/magefile/mage v1.13.0
 	github.com/onsi/ginkgo v1.2.1-0.20160219021059-ac3d45ddd7ef
 	github.com/onsi/gomega v0.0.0-20160305213952-7ce781ea776b
 	github.com/sirupsen/logrus v1.8.1

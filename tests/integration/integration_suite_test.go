@@ -1,23 +1,22 @@
-package integration_test
+package integration
 
 import (
+	"os"
+	"testing"
+
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-
-	. "github.com/justenwalker/awsnycast/tests/integration"
-
-	"testing"
 )
 
 var internalIPs []string
 
 func TestIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
+	if os.Getenv("INTEGRATION_TESTS") != "Y" {
+		t.Skip("Skipping Integration tests. Set INTEGRATION_TESTS=Y to run them")
 	}
 	RegisterFailHandler(Fail)
 
-	//RunMake()
+	//RunMage()
 	//RunTerraform()
 	internalIPs = InternalIPs()
 	RunSpecs(t, "Integration Suite")

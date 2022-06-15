@@ -1,0 +1,71 @@
+
+- name: "Configuring NAT Instance"
+  hosts: localhost
+  connection: local 
+  handlers:
+  - name: reload ufw
+    community.general.ufw:
+      state: reloaded
+  tasks:
+# Kernel Networking
+  - name: kernel > configure ip forwarding
+    ansible.posix.sysctl:
+      name:  '{{ item }}'
+      value: '1'
+      state: present
+      reload: yes
+      sysctl_set: yes
+    loop:
+      - net.ipv4.ip_forward
+      - net.ipv6.conf.default.forwarding
+      - net.ipv6.conf.all.forwarding
+# UFW
+  - name: ufw > configure defaults
+    ansible.builtin.lineinfile:
+      path: /etc/default/ufw
+      regexp: '^DEFAULT_FORWARD_POLICY='
+      line: DEFAULT_FORWARD_POLICY="ACCEPT"
+    notify:
+      - reload ufw
+  - name: ufw > configure masquerade rules
+    ansible.builtin.blockinfile:
+      path: /etc/ufw/before.rules
+      insertbefore: "# Don't delete these required lines"
+      marker: '# {mark} ANSIBLE MANAGED BLOCK: nat-rules'
+      block: |-
+        # NAT table rules
+        *nat
+        :POSTROUTING ACCEPT [0:0]
+        
+        -A POSTROUTING -s {{ vpc_cidr }} -o {{ ansible_default_ipv4.interface }} -j MASQUERADE
+
+        # End each table with the 'COMMIT' line or these rules won't be processed
+        COMMIT
+    notify:
+      - reload ufw
+  - name: ufw > enable firewall
+    community.general.ufw:
+      state: enabled
+      policy: allow
+# AWSnycast
+  - name: awsnycast > install config
+    ansible.builtin.template:
+      src: awsnycast.yaml.j2
+      dest: /etc/awsnycast.yaml
+      owner: root
+      group: root
+      mode: '0644'
+  - name: awsnycast > install service
+    ansible.builtin.template:
+      src: awsnycast.service.j2
+      dest: '/etc/systemd/system/awsnycast.service'
+      mode: '0644'
+      owner: root
+      group: root
+    register: awsnycast_systemd
+  - name: awsnycast > start service
+    ansible.builtin.systemd:
+      name: awsnycast
+      state: started
+      enabled: yes
+      daemon_reload: '{{ "yes" if awsnycast_systemd.changed else "no" }}'

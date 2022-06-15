@@ -1,6 +1,14 @@
 provider "aws" {
-    region = "eu-west-1"
-    shared_credentials_file = "${pathexpand("~/.aws/credentials")}"
-    profile = "default"
+  region = "us-west-2"
+  default_tags {
+    tags = {
+      integration_test = "true"
+      temporary        = "true"
+      project          = "awsnycast"
+    }
+  }
 }
 
+provider "archive" {
+
+}
