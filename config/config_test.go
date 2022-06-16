@@ -1,12 +1,13 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	a "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/hashicorp/go-multierror"
 
 	"github.com/justenwalker/awsnycast/aws"
@@ -32,20 +33,20 @@ func init() {
 
 type FakeRouteTableManager struct {
 	Error            error
-	RouteTable       ec2.RouteTable
+	RouteTable       ec2type.RouteTable
 	ManageRoutesSpec aws.ManageRoutesSpec
 	Noop             bool
 }
 
-func (r *FakeRouteTableManager) InstanceIsRouter(id string) bool {
+func (r *FakeRouteTableManager) InstanceIsRouter(context.Context, string) bool {
 	return true
 }
 
-func (r *FakeRouteTableManager) GetRouteTables() ([]*ec2.RouteTable, error) {
+func (r *FakeRouteTableManager) GetRouteTables(context.Context) ([]ec2type.RouteTable, error) {
 	return nil, nil
 }
 
-func (r *FakeRouteTableManager) ManageInstanceRoute(rtb ec2.RouteTable, rs aws.ManageRoutesSpec, noop bool) error {
+func (r *FakeRouteTableManager) ManageInstanceRoute(ctx context.Context, rtb ec2type.RouteTable, rs aws.ManageRoutesSpec, noop bool) error {
 	r.RouteTable = rtb
 	r.ManageRoutesSpec = rs
 	r.Noop = noop
@@ -116,7 +117,7 @@ func TestLoadConfigHealthchecks(t *testing.T) {
 func TestConfigDefault(t *testing.T) {
 	r := make(map[string]*RouteTable)
 	r["a"] = &RouteTable{
-		ManageRoutes: []*aws.ManageRoutesSpec{&aws.ManageRoutesSpec{Cidr: "127.0.0.1"}},
+		ManageRoutes: []*aws.ManageRoutesSpec{{Cidr: "127.0.0.1"}},
 	}
 	c := Config{
 		RouteTables: r,
@@ -432,16 +433,18 @@ func TestRouteTableFindUnknownType(t *testing.T) {
 }
 
 func TestUpdateEc2RouteTablesRouteTablesGetFilterFail(t *testing.T) {
-	awsRt := make([]*ec2.RouteTable, 0)
+	ctx := context.Background()
+	awsRt := make([]ec2type.RouteTable, 0)
 	rt := &RouteTable{}
-	err := rt.UpdateEc2RouteTables(awsRt)
+	err := rt.UpdateEc2RouteTables(ctx, awsRt)
 	if assert.NotNil(t, err) {
 		assert.Equal(t, err.Error(), "Route table finder type '' not found in the registry")
 	}
 }
 
 func TestUpdateEc2RouteTablesNoRouteTablesInAWS(t *testing.T) {
-	awsRt := make([]*ec2.RouteTable, 0)
+	ctx := context.Background()
+	awsRt := make([]ec2type.RouteTable, 0)
 	c := make(map[string]interface{})
 	c["key"] = "Name"
 	c["value"] = "private a"
@@ -452,23 +455,24 @@ func TestUpdateEc2RouteTablesNoRouteTablesInAWS(t *testing.T) {
 			Config: c,
 		},
 	}
-	err := rt.UpdateEc2RouteTables(awsRt)
+	err := rt.UpdateEc2RouteTables(ctx, awsRt)
 	if assert.NotNil(t, err) {
 		assert.Equal(t, "No route table in AWS matched filter spec in route table 'foo'", err.Error())
 	}
 	rt.Find.NoResultsOk = true
-	err = rt.UpdateEc2RouteTables(awsRt)
+	err = rt.UpdateEc2RouteTables(ctx, awsRt)
 	assert.Nil(t, err)
 }
 
 func TestUpdateEc2RouteTablesFindRouteTablesInAWS(t *testing.T) {
-	awsRt := make([]*ec2.RouteTable, 1)
-	awsRt[0] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	ctx := context.Background()
+	awsRt := make([]ec2type.RouteTable, 1)
+	awsRt[0] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
@@ -488,32 +492,33 @@ func TestUpdateEc2RouteTablesFindRouteTablesInAWS(t *testing.T) {
 			},
 		},
 	}
-	assert.Nil(t, rt.UpdateEc2RouteTables(awsRt))
+	assert.Nil(t, rt.UpdateEc2RouteTables(ctx, awsRt))
 }
 
 func TestRunEc2Updates(t *testing.T) {
+	ctx := context.Background()
 	rt := &RouteTable{
 		ManageRoutes: []*aws.ManageRoutesSpec{&aws.ManageRoutesSpec{Cidr: "127.0.0.1"}},
 	}
 	err := rt.Validate(tim, rtm, "foo", emptyHealthchecks, emptyHealthchecks)
-	rt.ec2RouteTables = append(rt.ec2RouteTables, &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	rt.ec2RouteTables = append(rt.ec2RouteTables, ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
 		},
 	})
 	frtm := &FakeRouteTableManager{}
-	if assert.Nil(t, rt.RunEc2Updates(frtm, true)) {
+	if assert.Nil(t, rt.RunEc2Updates(ctx, frtm, true)) {
 		assert.Equal(t, *(frtm.RouteTable.RouteTableId), "rtb-9696cffe")
 		assert.Equal(t, frtm.ManageRoutesSpec.Cidr, "127.0.0.1/32")
 	}
 	frtm.Error = errors.New("Test error")
-	err = rt.RunEc2Updates(frtm, true)
+	err = rt.RunEc2Updates(ctx, frtm, true)
 	if assert.NotNil(t, err) {
 		assert.Equal(t, err.Error(), "Test error")
 	}

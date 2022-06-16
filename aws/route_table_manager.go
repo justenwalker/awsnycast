@@ -1,61 +1,61 @@
 package aws
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/justenwalker/awsnycast/version"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/justenwalker/awsnycast/version"
 )
 
 var errNICNotFound = errors.New("nic with source dest check disabled was not found")
 
-type MyEC2Conn interface {
-	CreateRoute(*ec2.CreateRouteInput) (*ec2.CreateRouteOutput, error)
-	ReplaceRoute(*ec2.ReplaceRouteInput) (*ec2.ReplaceRouteOutput, error)
-	DescribeRouteTables(*ec2.DescribeRouteTablesInput) (*ec2.DescribeRouteTablesOutput, error)
-	DeleteRoute(*ec2.DeleteRouteInput) (*ec2.DeleteRouteOutput, error)
-	DescribeNetworkInterfaces(*ec2.DescribeNetworkInterfacesInput) (*ec2.DescribeNetworkInterfacesOutput, error)
-	DescribeInstanceAttribute(*ec2.DescribeInstanceAttributeInput) (*ec2.DescribeInstanceAttributeOutput, error)
-	DescribeInstanceStatus(*ec2.DescribeInstanceStatusInput) (*ec2.DescribeInstanceStatusOutput, error)
+type EC2API interface {
+	CreateRoute(context.Context, *ec2.CreateRouteInput, ...func(*ec2.Options)) (*ec2.CreateRouteOutput, error)
+	ReplaceRoute(context.Context, *ec2.ReplaceRouteInput, ...func(*ec2.Options)) (*ec2.ReplaceRouteOutput, error)
+	DescribeRouteTables(context.Context, *ec2.DescribeRouteTablesInput, ...func(*ec2.Options)) (*ec2.DescribeRouteTablesOutput, error)
+	DeleteRoute(context.Context, *ec2.DeleteRouteInput, ...func(*ec2.Options)) (*ec2.DeleteRouteOutput, error)
+	DescribeNetworkInterfaces(context.Context, *ec2.DescribeNetworkInterfacesInput, ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error)
+	DescribeInstanceAttribute(context.Context, *ec2.DescribeInstanceAttributeInput, ...func(*ec2.Options)) (*ec2.DescribeInstanceAttributeOutput, error)
+	DescribeInstanceStatus(context.Context, *ec2.DescribeInstanceStatusInput, ...func(*ec2.Options)) (*ec2.DescribeInstanceStatusOutput, error)
 }
 
 type RouteTableManager interface {
-	GetRouteTables() ([]*ec2.RouteTable, error)
-	ManageInstanceRoute(ec2.RouteTable, ManageRoutesSpec, bool) error
-	InstanceIsRouter(string) bool
+	GetRouteTables(ctx context.Context) ([]ec2type.RouteTable, error)
+	ManageInstanceRoute(context.Context, ec2type.RouteTable, ManageRoutesSpec, bool) error
+	InstanceIsRouter(context.Context, string) bool
 }
 
 type RouteTableManagerEC2 struct {
 	Region                 string
-	conn                   MyEC2Conn
+	conn                   EC2API
 	srcdstcheckForInstance map[string]bool
 }
 
-func NewRouteTableManagerEC2(region string, debug bool) *RouteTableManagerEC2 {
+func NewRouteTableManagerEC2(cfg aws.Config) *RouteTableManagerEC2 {
 	r := RouteTableManagerEC2{
 		srcdstcheckForInstance: map[string]bool{},
 	}
-	sess := session.New(&aws.Config{
-		Region:     aws.String(region),
-		MaxRetries: aws.Int(3),
-	})
-	sess.Handlers.Build.PushFrontNamed(addAWSnycastToUserAgent)
-	r.conn = ec2.New(sess)
+	r.conn = ec2.NewFromConfig(cfg, ec2.WithAPIOptions(middleware.AddUserAgentKey(fmt.Sprintf("awsnycast/%s", version.Version))))
 	return &r
 }
 
 // InstanceIsRouter when source destination check is disabled on any interface.
-func (r RouteTableManagerEC2) InstanceIsRouter(instanceID string) bool {
+func (r RouteTableManagerEC2) InstanceIsRouter(ctx context.Context, instanceID string) bool {
 	if v, ok := r.srcdstcheckForInstance[instanceID]; ok {
 		return v
 	}
 
-	if _, err := r.routerInterface(instanceID); err != nil {
+	if _, err := r.routerInterface(ctx, instanceID); err != nil {
 		switch err {
 		case errNICNotFound:
 			return false
@@ -68,10 +68,10 @@ func (r RouteTableManagerEC2) InstanceIsRouter(instanceID string) bool {
 	return true
 }
 
-func (r RouteTableManagerEC2) routerInterface(instanceID string) (nicID string, err error) {
-	out, err := r.conn.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
-		Filters: []*ec2.Filter{
-			{Name: aws.String("attachment.instance-id"), Values: aws.StringSlice([]string{instanceID})},
+func (r RouteTableManagerEC2) routerInterface(ctx context.Context, instanceID string) (nicID string, err error) {
+	out, err := r.conn.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{
+		Filters: []ec2type.Filter{
+			{Name: aws.String("attachment.instance-id"), Values: []string{instanceID}},
 		},
 	})
 	if err != nil {
@@ -88,7 +88,7 @@ func (r RouteTableManagerEC2) routerInterface(instanceID string) (nicID string, 
 	return "", errNICNotFound
 }
 
-func (r RouteTableManagerEC2) ManageInstanceRoute(rtb ec2.RouteTable, rs ManageRoutesSpec, noop bool) error {
+func (r RouteTableManagerEC2) ManageInstanceRoute(ctx context.Context, rtb ec2type.RouteTable, rs ManageRoutesSpec, noop bool) error {
 	route := findRouteFromRouteTable(rtb, rs.Cidr)
 	contextLogger := log.WithFields(log.Fields{
 		"vpc":         *(rtb.VpcId),
@@ -127,7 +127,7 @@ func (r RouteTableManagerEC2) ManageInstanceRoute(rtb ec2.RouteTable, rs ManageR
 							contextLogger.WithFields(log.Fields{"err": err.Error()}).Debug("RunBeforeDeleteRoute failed")
 						}
 					}
-					if err := r.DeleteInstanceRoute(rtb.RouteTableId, route, rs.Cidr, rs.Instance, noop); err != nil {
+					if err := r.DeleteInstanceRoute(ctx, rtb.RouteTableId, *route, rs.Cidr, rs.Instance, noop); err != nil {
 						return err
 					}
 					if len(rs.RunAfterDeleteRoute) > 0 {
@@ -144,7 +144,7 @@ func (r RouteTableManagerEC2) ManageInstanceRoute(rtb ec2.RouteTable, rs ManageR
 			contextLogger.Debug("Not routed by my instance - evaluate for replacement")
 		}
 
-		if err := r.ReplaceInstanceRoute(rtb.RouteTableId, route, rs, noop); err != nil {
+		if err := r.ReplaceInstanceRoute(ctx, rtb.RouteTableId, *route, rs, noop); err != nil {
 			return err
 		}
 		return nil
@@ -163,28 +163,28 @@ func (r RouteTableManagerEC2) ManageInstanceRoute(rtb ec2.RouteTable, rs ManageR
 	opts := getCreateRouteInput(rtb, rs.Cidr, rs.Instance, noop)
 
 	contextLogger.Info("Creating route to my instance")
-	if _, err := r.conn.CreateRoute(&opts); err != nil {
+	if _, err := r.conn.CreateRoute(ctx, &opts); err != nil {
 		return err
 	}
 	return nil
 }
 
-func findRouteFromRouteTable(rtb ec2.RouteTable, cidr string) *ec2.Route {
+func findRouteFromRouteTable(rtb ec2type.RouteTable, cidr string) *ec2type.Route {
 	for _, route := range rtb.Routes {
 		if route.DestinationCidrBlock != nil && *(route.DestinationCidrBlock) == cidr {
-			return route
+			return &route
 		}
 	}
 	return nil
 }
 
-func (r RouteTableManagerEC2) DeleteInstanceRoute(routeTableId *string, route *ec2.Route, cidr string, instance string, noop bool) error {
+func (r RouteTableManagerEC2) DeleteInstanceRoute(ctx context.Context, routeTableId *string, route ec2type.Route, cidr string, instance string, noop bool) error {
 	params := &ec2.DeleteRouteInput{
 		DestinationCidrBlock: aws.String(cidr),
 		RouteTableId:         routeTableId,
 		DryRun:               aws.Bool(noop),
 	}
-	_, err := r.conn.DeleteRoute(params)
+	_, err := r.conn.DeleteRoute(ctx, params)
 	contextLogger := log.WithFields(log.Fields{
 		"cidr": cidr,
 		"rtb":  *routeTableId,
@@ -201,7 +201,7 @@ func (r RouteTableManagerEC2) DeleteInstanceRoute(routeTableId *string, route *e
 	return nil
 }
 
-func (r RouteTableManagerEC2) checkRemoteHealthCheck(contextLogger *log.Entry, route *ec2.Route, rs ManageRoutesSpec) bool {
+func (r RouteTableManagerEC2) checkRemoteHealthCheck(contextLogger *log.Entry, route ec2type.Route, rs ManageRoutesSpec) bool {
 	contextLogger = contextLogger.WithFields(log.Fields{
 		"remote_healthcheck": rs.RemoteHealthcheckName,
 		"current_eni":        *(route.NetworkInterfaceId),
@@ -237,7 +237,7 @@ func (r RouteTableManagerEC2) checkRemoteHealthCheck(contextLogger *log.Entry, r
 	return true
 }
 
-func (r RouteTableManagerEC2) ReplaceInstanceRoute(routeTableId *string, route *ec2.Route, rs ManageRoutesSpec, noop bool) error {
+func (r RouteTableManagerEC2) ReplaceInstanceRoute(ctx context.Context, routeTableId *string, route ec2type.Route, rs ManageRoutesSpec, noop bool) error {
 	cidr := rs.Cidr
 	instance := rs.Instance
 	ifUnhealthy := rs.IfUnhealthy
@@ -245,21 +245,21 @@ func (r RouteTableManagerEC2) ReplaceInstanceRoute(routeTableId *string, route *
 		"cidr":                cidr,
 		"rtb":                 *routeTableId,
 		"instance_id":         instance,
-		"current_route_state": *(route.State),
+		"current_route_state": route.State,
 	})
 	if route.InstanceId != nil {
 		contextLogger = contextLogger.WithFields(log.Fields{"current_instance_id": *(route.InstanceId)})
 	}
 	if ifUnhealthy {
-		if *(route.State) == "active" {
+		if route.State == ec2type.RouteStateActive {
 			if rs.RemoteHealthcheckName != "" {
 				if !r.checkRemoteHealthCheck(contextLogger, route, rs) {
 					return nil
 				}
 			}
-			o, err := r.conn.DescribeInstanceStatus(&ec2.DescribeInstanceStatusInput{
+			o, err := r.conn.DescribeInstanceStatus(ctx, &ec2.DescribeInstanceStatusInput{
 				IncludeAllInstances: aws.Bool(false),
-				InstanceIds:         []*string{aws.String(*(route.InstanceId))},
+				InstanceIds:         []string{*(route.InstanceId)},
 			})
 			if err != nil {
 				contextLogger.WithFields(log.Fields{"err": err.Error()}).Error("Error trying to DescribeInstanceStatus, not replacing route")
@@ -268,11 +268,11 @@ func (r RouteTableManagerEC2) ReplaceInstanceRoute(routeTableId *string, route *
 			if len(o.InstanceStatuses) == 1 {
 				is := o.InstanceStatuses[0]
 				instanceHealthOK := true
-				if *(is.InstanceStatus.Status) == "impaired" {
+				if is.InstanceStatus.Status == ec2type.SummaryStatusImpaired {
 					instanceHealthOK = false
 				}
 				systemHealthOK := true
-				if *(is.SystemStatus.Status) == "impaired" {
+				if is.SystemStatus.Status == ec2type.SummaryStatusImpaired {
 					systemHealthOK = false
 				}
 				contextLogger = contextLogger.WithFields(log.Fields{"instanceHealthOK": instanceHealthOK, "systemHealthOK": systemHealthOK})
@@ -298,7 +298,7 @@ func (r RouteTableManagerEC2) ReplaceInstanceRoute(routeTableId *string, route *
 		}
 	}
 
-	nicID, err := r.routerInterface(instance)
+	nicID, err := r.routerInterface(ctx, instance)
 	if err != nil {
 		if err != nil {
 			contextLogger.WithFields(log.Fields{
@@ -307,7 +307,7 @@ func (r RouteTableManagerEC2) ReplaceInstanceRoute(routeTableId *string, route *
 			return err
 		}
 	}
-	if _, err = r.conn.ReplaceRoute(&ec2.ReplaceRouteInput{
+	if _, err = r.conn.ReplaceRoute(ctx, &ec2.ReplaceRouteInput{
 		DestinationCidrBlock: aws.String(cidr),
 		RouteTableId:         routeTableId,
 		NetworkInterfaceId:   aws.String(nicID),
@@ -328,18 +328,18 @@ func (r RouteTableManagerEC2) ReplaceInstanceRoute(routeTableId *string, route *
 	return nil
 }
 
-func (r RouteTableManagerEC2) GetRouteTables() ([]*ec2.RouteTable, error) {
-	resp, err := r.conn.DescribeRouteTables(&ec2.DescribeRouteTablesInput{})
+func (r RouteTableManagerEC2) GetRouteTables(ctx context.Context) ([]ec2type.RouteTable, error) {
+	resp, err := r.conn.DescribeRouteTables(ctx, &ec2.DescribeRouteTablesInput{})
 	if err != nil {
 		log.WithFields(log.Fields{
 			"err": err.Error(),
 		}).Warn("Error on DescribeRouteTables")
-		return []*ec2.RouteTable{}, err
+		return []ec2type.RouteTable{}, err
 	}
 	return resp.RouteTables, nil
 }
 
-func getCreateRouteInput(rtb ec2.RouteTable, cidr string, instance string, noop bool) ec2.CreateRouteInput {
+func getCreateRouteInput(rtb ec2type.RouteTable, cidr string, instance string, noop bool) ec2.CreateRouteInput {
 	return ec2.CreateRouteInput{
 		RouteTableId:         rtb.RouteTableId,
 		DestinationCidrBlock: aws.String(cidr),

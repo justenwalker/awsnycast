@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/syslog"
 	"os"
+	"os/signal"
+
+	log "github.com/sirupsen/logrus"
+	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
 
 	"github.com/justenwalker/awsnycast/daemon"
 	"github.com/justenwalker/awsnycast/version"
-	log "github.com/sirupsen/logrus"
-	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
 )
 
 var (
@@ -37,7 +40,9 @@ func main() {
 			log.AddHook(hook)
 		}
 	}
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
 	d.Debug = *debug
 	d.ConfigFile = *f
-	os.Exit(d.Run(*oneshot, *noop))
+	os.Exit(d.Run(ctx, *oneshot, *noop))
 }

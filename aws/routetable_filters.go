@@ -4,15 +4,15 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 )
 
 type RouteTableFilter interface {
-	Keep(*ec2.RouteTable) bool
+	Keep(ec2type.RouteTable) bool
 }
 
-func FilterRouteTables(f RouteTableFilter, tables []*ec2.RouteTable) []*ec2.RouteTable {
-	out := make([]*ec2.RouteTable, 0, len(tables))
+func FilterRouteTables(f RouteTableFilter, tables []ec2type.RouteTable) []ec2type.RouteTable {
+	out := make([]ec2type.RouteTable, 0, len(tables))
 	for _, rtb := range tables {
 		if f.Keep(rtb) {
 			out = append(out, rtb)
@@ -23,7 +23,7 @@ func FilterRouteTables(f RouteTableFilter, tables []*ec2.RouteTable) []*ec2.Rout
 
 type RouteTableFilterAlways struct{}
 
-func (fs RouteTableFilterAlways) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterAlways) Keep(rt ec2type.RouteTable) bool {
 	return false
 }
 
@@ -31,13 +31,13 @@ type RouteTableFilterNot struct {
 	Filter RouteTableFilter
 }
 
-func (fs RouteTableFilterNot) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterNot) Keep(rt ec2type.RouteTable) bool {
 	return !fs.Filter.Keep(rt)
 }
 
 type RouteTableFilterNever struct{}
 
-func (fs RouteTableFilterNever) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterNever) Keep(rt ec2type.RouteTable) bool {
 	return true
 }
 
@@ -45,7 +45,7 @@ type RouteTableFilterAnd struct {
 	RouteTableFilters []RouteTableFilter
 }
 
-func (fs RouteTableFilterAnd) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterAnd) Keep(rt ec2type.RouteTable) bool {
 	for _, f := range fs.RouteTableFilters {
 		if !f.Keep(rt) {
 			return false
@@ -58,7 +58,7 @@ type RouteTableFilterOr struct {
 	RouteTableFilters []RouteTableFilter
 }
 
-func (fs RouteTableFilterOr) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterOr) Keep(rt ec2type.RouteTable) bool {
 	for _, f := range fs.RouteTableFilters {
 		if f.Keep(rt) {
 			return true
@@ -69,7 +69,7 @@ func (fs RouteTableFilterOr) Keep(rt *ec2.RouteTable) bool {
 
 type RouteTableFilterMain struct{}
 
-func (fs RouteTableFilterMain) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterMain) Keep(rt ec2type.RouteTable) bool {
 	for _, a := range rt.Associations {
 		if *(a.Main) {
 			return true
@@ -79,23 +79,23 @@ func (fs RouteTableFilterMain) Keep(rt *ec2.RouteTable) bool {
 }
 
 // FIXME weird function
-func RouteTableForSubnet(subnet string, tables []*ec2.RouteTable) *ec2.RouteTable {
+func RouteTableForSubnet(subnet string, tables []ec2type.RouteTable) *ec2type.RouteTable {
 	subnet_rtb := FilterRouteTables(RouteTableFilterSubnet{SubnetId: subnet}, tables)
 	if len(subnet_rtb) == 0 {
 		main_rtbs := FilterRouteTables(RouteTableFilterMain{}, tables)
 		if len(main_rtbs) == 0 {
 			return nil
 		}
-		return main_rtbs[0]
+		return &main_rtbs[0]
 	}
-	return subnet_rtb[0]
+	return &subnet_rtb[0]
 }
 
 type RouteTableFilterSubnet struct {
 	SubnetId string
 }
 
-func (fs RouteTableFilterSubnet) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterSubnet) Keep(rt ec2type.RouteTable) bool {
 	for _, a := range rt.Associations {
 		if a.SubnetId != nil && *(a.SubnetId) == fs.SubnetId {
 			return true
@@ -111,7 +111,7 @@ type RouteTableFilterDestinationCidrBlock struct {
 	InstanceNotActive    bool
 }
 
-func (fs RouteTableFilterDestinationCidrBlock) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterDestinationCidrBlock) Keep(rt ec2type.RouteTable) bool {
 	for _, r := range rt.Routes {
 		if r.DestinationCidrBlock != nil && *(r.DestinationCidrBlock) == fs.DestinationCidrBlock {
 			if fs.ViaIGW {
@@ -122,7 +122,7 @@ func (fs RouteTableFilterDestinationCidrBlock) Keep(rt *ec2.RouteTable) bool {
 				if fs.ViaInstance {
 					if r.InstanceId != nil {
 						if fs.InstanceNotActive {
-							if *(r.State) != "active" {
+							if r.State != ec2type.RouteStateActive {
 								return true
 							}
 						} else {
@@ -143,7 +143,7 @@ type RouteTableFilterTagMatch struct {
 	Value string
 }
 
-func (fs RouteTableFilterTagMatch) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterTagMatch) Keep(rt ec2type.RouteTable) bool {
 	for _, t := range rt.Tags {
 		if *(t.Key) == fs.Key && *(t.Value) == fs.Value {
 			return true
@@ -157,7 +157,7 @@ type RouteTableFilterTagRegexMatch struct {
 	Regexp *regexp.Regexp
 }
 
-func (fs RouteTableFilterTagRegexMatch) Keep(rt *ec2.RouteTable) bool {
+func (fs RouteTableFilterTagRegexMatch) Keep(rt ec2type.RouteTable) bool {
 	for _, t := range rt.Tags {
 		if *(t.Key) == fs.Key && fs.Regexp.MatchString(*(t.Value)) {
 			return true

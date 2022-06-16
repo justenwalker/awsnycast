@@ -1,10 +1,11 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/hashicorp/go-multierror"
 	log "github.com/sirupsen/logrus"
 
@@ -17,10 +18,10 @@ type RouteTable struct {
 	Name           string                  `yaml:"-"`
 	Find           RouteTableFindSpec      `yaml:"find"`
 	ManageRoutes   []*aws.ManageRoutesSpec `yaml:"manage_routes"`
-	ec2RouteTables []*ec2.RouteTable
+	ec2RouteTables []ec2type.RouteTable
 }
 
-func (r *RouteTable) UpdateEc2RouteTables(rt []*ec2.RouteTable) error {
+func (r *RouteTable) UpdateEc2RouteTables(ctx context.Context, rt []ec2type.RouteTable) error {
 	filter, err := r.Find.GetFilter()
 	if err != nil {
 		return err
@@ -33,12 +34,12 @@ func (r *RouteTable) UpdateEc2RouteTables(rt []*ec2.RouteTable) error {
 		return errors.New(fmt.Sprintf("No route table in AWS matched filter spec in route table '%s'", r.Name))
 	}
 	for _, manage := range r.ManageRoutes {
-		manage.UpdateEc2RouteTables(r.ec2RouteTables)
+		manage.UpdateEc2RouteTables(ctx, r.ec2RouteTables)
 	}
 	return nil
 }
 
-func (r *RouteTable) RunEc2Updates(manager aws.RouteTableManager, noop bool) error {
+func (r *RouteTable) RunEc2Updates(ctx context.Context, manager aws.RouteTableManager, noop bool) error {
 	for _, rtb := range r.ec2RouteTables {
 		contextLogger := log.WithFields(log.Fields{
 			"rtb": *(rtb.RouteTableId),
@@ -46,7 +47,7 @@ func (r *RouteTable) RunEc2Updates(manager aws.RouteTableManager, noop bool) err
 		contextLogger.Debug("Finder found route table")
 		for _, manageRoute := range r.ManageRoutes {
 			contextLogger.WithFields(log.Fields{"cidr": manageRoute.Cidr}).Debug("Trying to manage route")
-			if err := manager.ManageInstanceRoute(*rtb, *manageRoute, noop); err != nil {
+			if err := manager.ManageInstanceRoute(ctx, rtb, *manageRoute, noop); err != nil {
 				return err
 			}
 		}
@@ -67,7 +68,7 @@ func (r *RouteTable) Validate(meta instancemetadata.InstanceMetadata, manager aw
 		result = multierror.Append(result, err)
 	}
 	if r.ec2RouteTables == nil {
-		r.ec2RouteTables = make([]*ec2.RouteTable, 0)
+		r.ec2RouteTables = make([]ec2type.RouteTable, 0)
 	}
 	for _, v := range r.ManageRoutes {
 		if err := v.Validate(meta, manager, name, healthchecks, remotehealthchecks); err != nil {

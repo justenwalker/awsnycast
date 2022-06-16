@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/justenwalker/awsnycast/aws"
@@ -40,7 +43,19 @@ func (d *Daemon) Setup() error {
 	d.InstanceMetadata = im
 
 	if d.RouteTableManager == nil {
-		d.RouteTableManager = aws.NewRouteTableManagerEC2(d.Region, d.Debug)
+		cfg, err := awsconfig.LoadDefaultConfig(context.Background())
+		if err != nil {
+			return err
+		}
+		if d.Region != "" {
+			cfg.Region = d.Region
+		}
+		if d.Debug {
+			cfg.ClientLogMode = awsv2.LogRequest | awsv2.LogResponseWithBody
+		}
+		cfg.RetryMode = awsv2.RetryModeStandard
+		cfg.RetryMaxAttempts = 3
+		d.RouteTableManager = aws.NewRouteTableManagerEC2(cfg)
 	}
 
 	config, err := config.New(d.ConfigFile, d.InstanceMetadata, d.RouteTableManager)
@@ -85,27 +100,27 @@ func (d *Daemon) stopHealthChecks() {
 	}
 }
 
-func (d *Daemon) RunOneRouteTable(rt []*ec2.RouteTable, name string, configRouteTable *config.RouteTable) error {
-	if err := configRouteTable.UpdateEc2RouteTables(rt); err != nil {
+func (d *Daemon) RunOneRouteTable(ctx context.Context, rt []ec2type.RouteTable, name string, configRouteTable *config.RouteTable) error {
+	if err := configRouteTable.UpdateEc2RouteTables(ctx, rt); err != nil {
 		return err
 	}
-	return configRouteTable.RunEc2Updates(d.RouteTableManager, d.noop)
+	return configRouteTable.RunEc2Updates(ctx, d.RouteTableManager, d.noop)
 }
 
-func (d *Daemon) RunRouteTables() error {
-	rt, err := d.RouteTableManager.GetRouteTables()
+func (d *Daemon) RunRouteTables(ctx context.Context) error {
+	rt, err := d.RouteTableManager.GetRouteTables(ctx)
 	if err != nil {
 		return err
 	}
 	for name, configRouteTables := range d.Config.RouteTables {
-		if err := d.RunOneRouteTable(rt, name, configRouteTables); err != nil {
+		if err := d.RunOneRouteTable(ctx, rt, name, configRouteTables); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (d *Daemon) Run(oneShot bool, noop bool) int {
+func (d *Daemon) Run(ctx context.Context, oneShot bool, noop bool) int {
 	d.oneShot = oneShot
 	d.noop = noop
 	if err := d.Setup(); err != nil {
@@ -113,7 +128,7 @@ func (d *Daemon) Run(oneShot bool, noop bool) int {
 		return 1
 	}
 
-	if !d.RouteTableManager.InstanceIsRouter(d.Instance) {
+	if !d.RouteTableManager.InstanceIsRouter(ctx, d.Instance) {
 		log.WithFields(log.Fields{"instance_id": d.Instance}).Error("I am not a router (do not have src/destination checking disabled)")
 		return 1
 	}
@@ -121,7 +136,7 @@ func (d *Daemon) Run(oneShot bool, noop bool) int {
 	d.quitChan = make(chan bool, 1)
 	d.runHealthChecks()
 	defer d.stopHealthChecks()
-	err := d.RunRouteTables()
+	err := d.RunRouteTables(ctx)
 	if err != nil {
 		log.WithFields(log.Fields{"err": err.Error()}).Error("Error in initial route table run")
 		return 1
@@ -149,7 +164,7 @@ func (d *Daemon) RunSleepLoop() {
 				ticker.Stop()
 				return
 			case <-fetch:
-				err := d.RunRouteTables()
+				err := d.RunRouteTables(context.Background())
 				if err != nil {
 					log.WithFields(log.Fields{"err": err.Error()}).Warn("Error in route table poll run")
 				}

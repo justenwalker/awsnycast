@@ -1,14 +1,15 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	a "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/justenwalker/awsnycast/aws"
@@ -36,18 +37,18 @@ func (m FakeMetadataFetcher) GetMetadata(key string) (string, error) {
 
 func NewFakeRouteTableManager() *FakeRouteTableManager {
 	f := &FakeRouteTableManager{}
-	f.Tables = make([]*ec2.RouteTable, 0)
+	f.Tables = make([]ec2type.RouteTable, 0)
 	return f
 }
 
-func (r *FakeRouteTableManager) InstanceIsRouter(id string) bool {
+func (r *FakeRouteTableManager) InstanceIsRouter(ctx context.Context, id string) bool {
 	return true
 }
 
 type FakeRouteTableManager struct {
-	Tables                   []*ec2.RouteTable
+	Tables                   []ec2type.RouteTable
 	Error                    error
-	RouteTable               ec2.RouteTable
+	RouteTable               ec2type.RouteTable
 	Cidr                     string
 	Instance                 string
 	IfUnhealthy              bool
@@ -55,11 +56,11 @@ type FakeRouteTableManager struct {
 	ManageInstanceRouteError error
 }
 
-func (f *FakeRouteTableManager) GetRouteTables() ([]*ec2.RouteTable, error) {
+func (f *FakeRouteTableManager) GetRouteTables(ctx context.Context) ([]ec2type.RouteTable, error) {
 	return f.Tables, f.Error
 }
 
-func (f *FakeRouteTableManager) ManageInstanceRoute(rtb ec2.RouteTable, rs aws.ManageRoutesSpec, noop bool) error {
+func (f *FakeRouteTableManager) ManageInstanceRoute(ctx context.Context, rtb ec2type.RouteTable, rs aws.ManageRoutesSpec, noop bool) error {
 	f.RouteTable = rtb
 	f.Cidr = rs.Cidr
 	f.Instance = rs.Instance
@@ -94,11 +95,12 @@ func getD(a bool) Daemon {
 }
 
 func TestRunRouteTablesFailGetRouteTables(t *testing.T) {
+	ctx := context.Background()
 	assert := assert.New(t)
 	d := getD(true)
 	rtf := d.RouteTableManager.(*FakeRouteTableManager)
 	rtf.Error = errors.New("Route table get fail")
-	err := d.RunRouteTables()
+	err := d.RunRouteTables(ctx)
 	if assert.NotNil(err) {
 		assert.Equal(err.Error(), "Route table get fail")
 	}
@@ -171,13 +173,14 @@ func TestSetupNormal(t *testing.T) {
 }
 
 func TestSetupBadConfigFile(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
 	d.ConfigFile = "../tests/doesnotexist.yaml"
 	err := d.Setup()
 	if assert.NotNil(t, err) {
 		assert.Equal(t, err.Error(), "open ../tests/doesnotexist.yaml: no such file or directory")
 	}
-	assert.Equal(t, d.Run(true, false), 1)
+	assert.Equal(t, d.Run(ctx, true, false), 1)
 }
 
 func TestSetupHealthChecks(t *testing.T) {
@@ -193,56 +196,60 @@ func TestSetupHealthChecks(t *testing.T) {
 }
 
 func TestRunOneShotFail(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
-	assert.Equal(t, d.Run(true, true), 1)
+	assert.Equal(t, d.Run(ctx, true, true), 1)
 }
 
 func TestRunOneShot(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
-	awsRt := make([]*ec2.RouteTable, 2)
-	awsRt[0] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt := make([]ec2type.RouteTable, 2)
+	awsRt[0] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
 		},
 	}
-	awsRt[1] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt[1] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-deadbeef"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("type"),
 				Value: a.String("private"),
 			},
-			&ec2.Tag{
+			{
 				Key:   a.String("az"),
 				Value: a.String("eu-west-1b"),
 			},
 		},
 	}
 	d.RouteTableManager.(*FakeRouteTableManager).Tables = awsRt
-	assert.Equal(t, d.Run(true, true), 0)
+	assert.Equal(t, d.Run(ctx, true, true), 0)
 }
 
 func TestRunOneRouteTableGetFilterFail(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
-	awsRt := make([]*ec2.RouteTable, 0)
+	awsRt := make([]ec2type.RouteTable, 0)
 	rt := &config.RouteTable{}
-	err := d.RunOneRouteTable(awsRt, "public", rt)
+	err := d.RunOneRouteTable(ctx, awsRt, "public", rt)
 	if assert.NotNil(t, err) {
 		assert.Equal(t, err.Error(), "Route table finder type '' not found in the registry")
 	}
 }
 
 func TestRunOneRouteTableNoRouteTablesInAWS(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
-	awsRt := make([]*ec2.RouteTable, 0)
+	awsRt := make([]ec2type.RouteTable, 0)
 	c := make(map[string]interface{})
 	c["key"] = "Name"
 	c["value"] = "private a"
@@ -253,21 +260,22 @@ func TestRunOneRouteTableNoRouteTablesInAWS(t *testing.T) {
 			Config: c,
 		},
 	}
-	err := d.RunOneRouteTable(awsRt, "public", rt)
+	err := d.RunOneRouteTable(ctx, awsRt, "public", rt)
 	if assert.NotNil(t, err) {
 		assert.Equal(t, "No route table in AWS matched filter spec in route table 'foo'", err.Error())
 	}
 }
 
 func TestRunOneRouteTableNoManageRoutes(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
-	awsRt := make([]*ec2.RouteTable, 1)
-	awsRt[0] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt := make([]ec2type.RouteTable, 1)
+	awsRt[0] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
@@ -282,19 +290,20 @@ func TestRunOneRouteTableNoManageRoutes(t *testing.T) {
 			Config: c,
 		},
 	}
-	err := d.RunOneRouteTable(awsRt, "public", rt)
+	err := d.RunOneRouteTable(ctx, awsRt, "public", rt)
 	assert.Nil(t, err)
 }
 
 func TestRunOneRouteTable(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
-	awsRt := make([]*ec2.RouteTable, 1)
-	awsRt[0] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt := make([]ec2type.RouteTable, 1)
+	awsRt[0] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
@@ -315,20 +324,21 @@ func TestRunOneRouteTable(t *testing.T) {
 		},
 		ManageRoutes: u,
 	}
-	assert.Nil(t, d.RunOneRouteTable(awsRt, "public", rt))
+	assert.Nil(t, d.RunOneRouteTable(ctx, awsRt, "public", rt))
 }
 
 func TestRunOneRouteTableUpsertRouteFail(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
 	rtf := d.RouteTableManager.(*FakeRouteTableManager)
 	rtf.ManageInstanceRouteError = errors.New("Test")
-	awsRt := make([]*ec2.RouteTable, 1)
-	awsRt[0] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt := make([]ec2type.RouteTable, 1)
+	awsRt[0] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
@@ -349,7 +359,7 @@ func TestRunOneRouteTableUpsertRouteFail(t *testing.T) {
 		},
 		ManageRoutes: u,
 	}
-	err := d.RunOneRouteTable(awsRt, "public", rt)
+	err := d.RunOneRouteTable(ctx, awsRt, "public", rt)
 	if assert.NotNil(t, err) {
 		assert.Equal(t, err.Error(), "Test")
 	}
@@ -367,30 +377,31 @@ func TestRunSleepLoop(t *testing.T) {
 }
 
 func TestRunOneReal(t *testing.T) {
+	ctx := context.Background()
 	d := getD(true)
 	d.FetchWait = time.Nanosecond
-	awsRt := make([]*ec2.RouteTable, 2)
-	awsRt[0] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt := make([]ec2type.RouteTable, 2)
+	awsRt[0] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-9696cffe"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("Name"),
 				Value: a.String("private a"),
 			},
 		},
 	}
-	awsRt[1] = &ec2.RouteTable{
-		Associations: []*ec2.RouteTableAssociation{},
+	awsRt[1] = ec2type.RouteTable{
+		Associations: []ec2type.RouteTableAssociation{},
 		RouteTableId: a.String("rtb-deadbeef"),
-		Routes:       []*ec2.Route{},
-		Tags: []*ec2.Tag{
-			&ec2.Tag{
+		Routes:       []ec2type.Route{},
+		Tags: []ec2type.Tag{
+			{
 				Key:   a.String("az"),
 				Value: a.String("eu-west-1b"),
 			},
-			&ec2.Tag{
+			{
 				Key:   a.String("type"),
 				Value: a.String("private"),
 			},
@@ -399,7 +410,7 @@ func TestRunOneReal(t *testing.T) {
 	d.RouteTableManager.(*FakeRouteTableManager).Tables = awsRt
 	hasFinishedRunLoop := make(chan bool, 1)
 	go func() {
-		assert.Equal(t, d.Run(false, true), 0, "Run was not successful")
+		assert.Equal(t, d.Run(ctx, false, true), 0, "Run was not successful")
 		hasFinishedRunLoop <- true
 	}()
 	time.Sleep(time.Millisecond)

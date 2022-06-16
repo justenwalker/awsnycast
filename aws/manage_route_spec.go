@@ -1,12 +1,14 @@
 package aws
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/hashicorp/go-multierror"
 	log "github.com/sirupsen/logrus"
 
@@ -24,7 +26,7 @@ type ManageRoutesSpec struct {
 	remotehealthchecktemplate *healthcheck.Healthcheck            `yaml:"-"`
 	remotehealthchecks        map[string]*healthcheck.Healthcheck `yaml:"-"`
 	IfUnhealthy               bool                                `yaml:"if_unhealthy"`
-	ec2RouteTables            []*ec2.RouteTable                   `yaml:"-"`
+	ec2RouteTables            []ec2type.RouteTable                `yaml:"-"`
 	Manager                   RouteTableManager                   `yaml:"-"`
 	NeverDelete               bool                                `yaml:"never_delete"`
 	myIPAddress               string                              `yaml:"-"`
@@ -38,7 +40,7 @@ func (r *ManageRoutesSpec) Validate(meta instancemetadata.InstanceMetadata, mana
 	r.myIPAddress = meta.IPAddress
 	var result *multierror.Error
 	r.Manager = manager
-	r.ec2RouteTables = make([]*ec2.RouteTable, 0)
+	r.ec2RouteTables = make([]ec2type.RouteTable, 0)
 	r.remotehealthchecks = make(map[string]*healthcheck.Healthcheck)
 	if r.Cidr == "" {
 		result = multierror.Append(result, errors.New(fmt.Sprintf("cidr is not defined in %s", name)))
@@ -81,13 +83,13 @@ func (r *ManageRoutesSpec) StartHealthcheckListener(noop bool) {
 	go func() {
 		c := r.healthcheck.GetListener()
 		for {
-			r.handleHealthcheckResult(<-c, false, noop)
+			r.handleHealthcheckResult(context.TODO(), <-c, false, noop)
 		}
 	}()
 	return
 }
 
-func (r *ManageRoutesSpec) handleHealthcheckResult(res bool, remote bool, noop bool) {
+func (r *ManageRoutesSpec) handleHealthcheckResult(ctx context.Context, res bool, remote bool, noop bool) {
 	resText := "FAILED"
 	if res {
 		resText = "PASSED"
@@ -105,19 +107,19 @@ func (r *ManageRoutesSpec) handleHealthcheckResult(res bool, remote bool, noop b
 	contextLogger.Info("Healthcheck status change, reevaluating current routes")
 	for _, rtb := range r.ec2RouteTables {
 		innerLogger := contextLogger.WithFields(log.Fields{
-			"rtb": *(rtb.RouteTableId),
+			"rtb": rtb.RouteTableId,
 		})
 		innerLogger.Debug("Working for one route table")
-		if err := r.Manager.ManageInstanceRoute(*rtb, *r, noop); err != nil {
+		if err := r.Manager.ManageInstanceRoute(ctx, rtb, *r, noop); err != nil {
 			innerLogger.WithFields(log.Fields{"err": err.Error()}).Warn("error")
 		}
 	}
 }
 
-func (r *ManageRoutesSpec) UpdateEc2RouteTables(rt []*ec2.RouteTable) {
+func (r *ManageRoutesSpec) UpdateEc2RouteTables(ctx context.Context, rt []ec2type.RouteTable) {
 	log.Debug(fmt.Sprintf("manange routes: %+v", rt))
 	r.ec2RouteTables = rt
-	r.UpdateRemoteHealthchecks()
+	r.UpdateRemoteHealthchecks(ctx)
 }
 
 var eniToIP map[string]string
@@ -126,23 +128,24 @@ func init() {
 	eniToIP = make(map[string]string)
 }
 
-func (r *ManageRoutesSpec) UpdateRemoteHealthchecks() {
+func (r *ManageRoutesSpec) UpdateRemoteHealthchecks(ctx context.Context) {
 	if r.RemoteHealthcheckName == "" {
 		return
 	}
-	eniIdsToFetch := make([]*string, 0)
+	eniIdsToFetch := make([]string, 0)
 	routeEnis := make([]string, 0)
 	for _, rtb := range r.ec2RouteTables {
-		route := findRouteFromRouteTable(*rtb, r.Cidr)
-		if route != nil {
-			routeEnis = append(routeEnis, *route.NetworkInterfaceId)
-			if _, ok := eniToIP[*route.NetworkInterfaceId]; !ok {
-				eniIdsToFetch = append(eniIdsToFetch, route.NetworkInterfaceId)
+		route := findRouteFromRouteTable(rtb, r.Cidr)
+		if route != nil && route.NetworkInterfaceId != nil {
+			nicID := *route.NetworkInterfaceId
+			routeEnis = append(routeEnis, nicID)
+			if _, ok := eniToIP[nicID]; !ok {
+				eniIdsToFetch = append(eniIdsToFetch, nicID)
 			}
 		}
 	}
 	if len(eniIdsToFetch) > 0 {
-		out, err := r.Manager.(*RouteTableManagerEC2).conn.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIdsToFetch})
+		out, err := r.Manager.(*RouteTableManagerEC2).conn.DescribeNetworkInterfaces(ctx, &ec2.DescribeNetworkInterfacesInput{NetworkInterfaceIds: eniIdsToFetch})
 		if err != nil {
 			log.Error("Error " + err.Error())
 			return
@@ -177,7 +180,7 @@ func (r *ManageRoutesSpec) UpdateRemoteHealthchecks() {
 					for {
 						res := <-c
 						contextLogger.WithFields(log.Fields{"result": res}).Debug("Got result from remote healthchecl")
-						r.handleHealthcheckResult(res, true, false)
+						r.handleHealthcheckResult(ctx, res, true, false)
 					}
 				}()
 			}
