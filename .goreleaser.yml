@@ -1,0 +1,61 @@
+before:
+  hooks:
+    - go mod tidy
+snapshot:
+  name_template: "{{ incpatch .Version }}-dev+{{ .ShortCommit }}"
+builds:
+  - id: bin-awsnycast
+    binary: awsnycast
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+archives:
+  - id: arch-awsnycast
+    builds:
+      - bin-awsnycast
+    name_template:  "awsnycast_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: ["none*"]
+nfpms:
+  - id: deb-awsnycast
+    builds: [bin-awsnycast]
+    package_name: awsnycast
+    vendor: Justen Walker
+    homepage: https://github.com/justenwalker/awsnycast
+    maintainer: Justen Walker <justen.walker+awsnycast@gmail.com>
+    description: |-
+      AWSnycast allows you to implement an Anycast-like method of route publishing - based on healthchecks, and HA/failover.
+      This is very similar to using systems like exabgp or bird on traditional datacenter hosts to publish BGP routing 
+      information for individual /32 IPs of services they're running.
+    replacements:
+      386: i386
+    formats:
+      - deb
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+release:
+  ids:
+  - arch-awsnycast
+  - deb-awsnycast
+  name_template: "Release v{{.Version}}"
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: 'Bug fixes'
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^ci[(\\w)]*:'
+      - '^style[(\\w)]*:'
+      - '^docs[(\\w)]*:'
+      - '^test[(\\w)]*:'
