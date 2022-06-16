@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"time"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
@@ -18,6 +20,7 @@ type Daemon struct {
 	oneShot           bool
 	noop              bool
 	ConfigFile        string
+	Version           string
 	Debug             bool
 	Config            *config.Config
 	MetadataFetcher   instancemetadata.MetadataFetcher
@@ -43,10 +46,12 @@ func (d *Daemon) Setup() error {
 	d.InstanceMetadata = im
 
 	if d.RouteTableManager == nil {
+		mw := middleware.AddUserAgentKey(fmt.Sprintf("awsnycast/%s", d.Version))
 		cfg, err := awsconfig.LoadDefaultConfig(context.Background())
 		if err != nil {
 			return err
 		}
+		cfg.APIOptions = append(cfg.APIOptions, mw)
 		if d.Region != "" {
 			cfg.Region = d.Region
 		}

@@ -3,18 +3,13 @@ package aws
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 
 	ec2type "github.com/aws/aws-sdk-go-v2/service/ec2/types"
-	"github.com/aws/aws-sdk-go/aws/request"
 	log "github.com/sirupsen/logrus"
-
-	"github.com/justenwalker/awsnycast/version"
 )
 
 var errNICNotFound = errors.New("nic with source dest check disabled was not found")
@@ -45,7 +40,7 @@ func NewRouteTableManagerEC2(cfg aws.Config) *RouteTableManagerEC2 {
 	r := RouteTableManagerEC2{
 		srcdstcheckForInstance: map[string]bool{},
 	}
-	r.conn = ec2.NewFromConfig(cfg, ec2.WithAPIOptions(middleware.AddUserAgentKey(fmt.Sprintf("awsnycast/%s", version.Version))))
+	r.conn = ec2.NewFromConfig(cfg)
 	return &r
 }
 
@@ -346,11 +341,4 @@ func getCreateRouteInput(rtb ec2type.RouteTable, cidr string, instance string, n
 		InstanceId:           aws.String(instance),
 		DryRun:               aws.Bool(noop),
 	}
-}
-
-// addAWSnycastToUserAgent is a named handler that will add AWSnycast
-// to requests made by the AWS SDK.
-var addAWSnycastToUserAgent = request.NamedHandler{
-	Name: "AWSNycast.AWSnycastUserAgentHandler",
-	Fn:   request.MakeAddToUserAgentHandler("AWSnycast", version.Version),
 }

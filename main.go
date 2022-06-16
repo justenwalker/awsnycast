@@ -12,7 +12,6 @@ import (
 	logrus_syslog "github.com/sirupsen/logrus/hooks/syslog"
 
 	"github.com/justenwalker/awsnycast/daemon"
-	"github.com/justenwalker/awsnycast/version"
 )
 
 var (
@@ -24,13 +23,22 @@ var (
 	logToSyslog  = flag.Bool("syslog", false, "Log to syslog")
 )
 
+// goreleaser build options
+var (
+	version string
+	commit  string
+	date    string
+	builtBy string
+)
+
 func main() {
 	flag.Parse()
 	if *printVersion {
-		fmt.Printf("%s\n", version.Version)
+		fmt.Printf("%s (%s)\n", version, commit)
 		os.Exit(0)
 	}
 	d := new(daemon.Daemon)
+	d.Version = version
 	if *debug {
 		log.SetLevel(log.DebugLevel)
 	}
